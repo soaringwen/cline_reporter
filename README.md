@@ -389,17 +389,23 @@ python3 -m cline_reporter report --force
 
 服务端只需提供两个接受 `POST application/json` 的接口，返回 2xx 即视为成功。
 
+> 完整的接口契约见 **[API.md](API.md)** —— 含逐字段规格、错误码与重试矩阵、幂等 SQL、参考实现与容量估算。本节只给最小必要信息。
+
 ### 幂等处理（重要）
 
-同一条任务的 token 会**随会话推进持续增长**，因此同一个 `task_id` 会以不同指纹被多次上报。客户端已通过指纹变化来触发重报，服务端也必须做幂等 upsert，否则会产生重复行。两种可行策略：
+同一条任务的 token 会**随会话推进持续增长**，因此同一个 `task_id` 会被多次上报。客户端已通过内容指纹变化来触发重报，服务端也必须做幂等 upsert，否则会产生重复行。
 
-- 用记录指纹直接做唯一键 —— 客户端按如下规则计算，与 Cline 原始字段解耦：
-  `sha1(json([ts, tokens_in, tokens_out, cache_writes, cache_reads, total_cost, size, model, cwd, is_favorited, task_text]))`
-- 或使用 `(terminal_id, ide_type, task_id)` 作为主键做 upsert，始终覆盖为最新累计值。
+**推荐**直接用自然键 `(terminal_id, ide_type, task_id)` 做主键 upsert，并用 `ts` 做单调守卫（`WHERE EXCLUDED.task_ts >= 已有.task_ts`），避免乱序请求把新值覆盖成旧值。客户端内部增量键为 `usage|<ide_type>|<task_id>`、`skill|<ide_type>|<task_id>|<skill>`，可用于排查。
 
-客户端内部增量键（可用于排查）：usage 为 `usage|<ide_type>|<task_id>`，skill 为 `skill|<ide_type>|<task_id>|<skill>`。
+> 注意：客户端**不上报** `fingerprint` 字段，指纹只存在本地 `state.json` / `pending.jsonl` 中。若想用指纹做唯一键，服务端需自行复刻客户端的 SHA-1 算法，其中涉及 Python `float` 的序列化细节，跨语言复现容易不一致 —— 因此不建议。
+
+### 批次语义
+
+客户端**只以 HTTP 状态码判断整批成败，且会忽略成功响应体**。因此服务端必须「整批全收或整批拒收」：返回 200 却在 body 里报告部分记录被拒，客户端会把整批标记为已上报，被拒的记录将**永久丢失**。单条记录字段异常时应返回 200 并落库或写入隔离表，而不是返回 4xx。
 
 ### 建表参考（PostgreSQL）
+
+> 下面是精简可用的版本。完整版（含隔离表、更多索引、幂等 upsert SQL、并发与容量处理）见 [API.md § 参考实现](API.md#11-参考实现)。
 
 ```sql
 -- Token 用量
@@ -427,15 +433,13 @@ CREATE TABLE usage_record (
   report_source       VARCHAR(32),      -- taskHistory.json / state.vscdb
   cline_version       VARCHAR(32),
   reported_at         TIMESTAMPTZ DEFAULT now(),
-  task_ts             TIMESTAMPTZ,      -- Cline 记录的最后更新时间
-  fingerprint         CHAR(40),         -- 客户端内容指纹，用于幂等
+  task_ts             TIMESTAMPTZ,      -- Cline 记录的最后更新时间（幂等单调守卫）
   UNIQUE (terminal_id, ide_type, task_id)
 );
 
 CREATE INDEX idx_usage_model   ON usage_record (model);
 CREATE INDEX idx_usage_project ON usage_record (project);
-CREATE INDEX idx_usage_ts      ON usage_record (task_ts);
-CREATE UNIQUE INDEX idx_usage_fp ON usage_record (fingerprint);
+CREATE INDEX idx_usage_ts      ON usage_record (task_ts DESC);
 
 -- Skill 使用
 CREATE TABLE skill_usage (
@@ -581,6 +585,7 @@ cline_reporter/
 └── scheduler.py    # launchd / cron / schtasks 定时任务
 config.example.json # 配置模板
 pyproject.toml      # 打包元数据与 cline-reporter 命令入口
+API.md              # 后台接口规格（服务端对接用）
 ```
 
 运行时状态文件：
