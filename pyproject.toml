@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cline-usage-reporter"
+version = "1.0.0"
+description = "Cline token 用量与 Skill 使用的本地旁路采集/上报工具（方案三）"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+cline-reporter = "cline_reporter.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["cline_reporter*"]

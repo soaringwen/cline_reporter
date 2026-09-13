@@ -1,0 +1,34 @@
+{
+  "endpoint": {
+    "url": "https://your-backend.com",
+    "usage_path": "/api/usage/report",
+    "skill_path": "/api/skill/report",
+    "token": "",
+    "headers": {},
+    "timeout_seconds": 15,
+    "retries": 3,
+    "mode": "batch",
+    "batch_size": 200
+  },
+  "collect": {
+    "ide_roots": [],
+    "include_task_text": true,
+    "task_text_max_len": 200,
+    "include_skill_records": true,
+    "include_legacy_vscdb": true,
+    "project_mapping": {
+      "/Users/you/CodeBuddy/": "CodeBuddy",
+      "/Users/you/Desktop/TRAE": "TRAE"
+    },
+    "exclude_cwd_prefixes": [],
+    "ignored_skill_names": [],
+    "ignored_models": []
+  },
+  "terminal": {
+    "id": "",
+    "name": ""
+  },
+  "state": {
+    "dir": "~/.cline-usage-reporter"
+  }
+}
